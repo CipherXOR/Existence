@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "existence",
+  "version": "${version}",
+  "name": "Existence",
+  "description": "Are you truly alone?",
+  "authors": [
+    "Cipher"
+  ],
+  "contact": {
+    "homepage": ""
+  },
+  "license": "LGPL-3.0",
+  "icon": "icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "me.cipher.existence.fabric.ExistenceFabric"
+    ],
+    "client": [
+      "me.cipher.existence.fabric.client.ExistenceFabricClient"
+    ],
+    "voicechat": [
+      "me.cipher.existence.sound.voicechat.ExistenceVoicechatPlugin"
+    ]
+  },
+  "mixins": [
+    "existence.mixins.json",
+    "existence.api.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": ">1.19.4 <=1.20.1",
+    "java": ">=17",
+    "architectury": ">=9.2.14",
+    "fabric-api": "*",
+    "voicechat": "*"
+  },
+  "suggests": {
+    "another-mod": "*"
+  }
+}

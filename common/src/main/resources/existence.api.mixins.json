@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "me.cipher.existence.api",
+  "compatibilityLevel": "JAVA_17",
+  "minVersion": "0.8",
+  "client": [
+    "iris.CommonUniformsMixin"
+  ],
+  "mixins": [],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

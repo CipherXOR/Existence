@@ -1,0 +1,27 @@
+{
+  "recorder_horror": {
+    "sounds": [
+      {
+        "name": "existence:recorder_horror",
+        "weight": 5
+      },
+      {
+        "name": "existence:recorder_horror2",
+        "weight": 35
+      },
+      {
+        "name": "existence:recorder_horror3",
+        "weight": 5
+      },
+      {
+        "name": "existence:recorder_horror4",
+        "weight": 5
+      },
+      {
+        "name": "existence:recorder_horror5",
+        "weight": 50
+      }
+    ],
+    "subtitle": "subtitles.existence.recorder_horror"
+  }
+}
