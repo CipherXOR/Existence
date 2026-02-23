@@ -2,7 +2,6 @@ package me.cipher.existence;
 
 import dev.architectury.event.EventResult;
 import dev.architectury.event.events.common.EntityEvent;
-import dev.architectury.event.events.common.InteractionEvent;
 import dev.architectury.event.events.common.PlayerEvent;
 import dev.architectury.event.events.common.TickEvent;
 import dev.architectury.networking.NetworkManager;
@@ -33,8 +32,6 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.BedBlock;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
@@ -60,7 +57,6 @@ public class Existence {
 
     public static void setupListeners() {
         EntityAttributeRegistry.register(ModEntities.GHOST, GhostEntity::createAttributes);
-
         PlayerEvent.ATTACK_ENTITY.register((player, level, target, hand, result) -> {
             if (!level.isClientSide && target instanceof net.minecraft.world.entity.LivingEntity living) {
                 ServerStressManager.onAttackEntity((ServerPlayer) player, living);
@@ -71,16 +67,6 @@ public class Existence {
         EntityEvent.LIVING_HURT.register((entity, source, amount) -> {
             if (!entity.level().isClientSide && entity instanceof ServerPlayer) {
                 ServerStressManager.onHurt((ServerPlayer) entity);
-            }
-            return EventResult.pass();
-        });
-
-        InteractionEvent.RIGHT_CLICK_BLOCK.register((player, hand, pos, face) -> {
-            if (!player.level().isClientSide && player instanceof ServerPlayer serverPlayer) {
-                BlockState state = player.level().getBlockState(pos);
-                if (state.getBlock() instanceof BedBlock) {
-                    ServerStressManager.onSleep(serverPlayer);
-                }
             }
             return EventResult.pass();
         });
@@ -203,7 +189,7 @@ public class Existence {
             ghost.setTargetPlayer(target.getUUID());
             ghost.setCustomName(skinSource.getName());
             ghost.setCustomNameVisible(true);
-            int lifespanTicks = 60 + RANDOM.nextInt(241);
+            int lifespanTicks = 600 + RANDOM.nextInt(401);
             ghost.setDespawnTime(lifespanTicks);
             level.addFreshEntity(ghost);
             return true;

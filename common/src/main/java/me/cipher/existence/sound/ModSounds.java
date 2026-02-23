@@ -14,5 +14,8 @@ public class ModSounds {
             SOUNDS.register("recorder_horror",
                     () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(Existence.MOD_ID, "recorder_horror")));
 
+    public static final RegistryEntry<SoundEvent> RECORDER_HORROR2 =
+            SOUNDS.register("recorder_horror2",
+                    () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(Existence.MOD_ID, "recorder_horror2")));
     public static void init() {}
 }

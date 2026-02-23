@@ -16,8 +16,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.ai.goal.OpenDoorGoal;
-import net.minecraft.world.entity.ai.goal.RandomStrollGoal;
+import net.minecraft.world.entity.ai.goal.*;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
@@ -32,14 +31,11 @@ import java.util.UUID;
 public class GhostEntity extends PathfinderMob {
     private static final EntityDataAccessor<Optional<UUID>> DATA_SKIN_OWNER = SynchedEntityData.defineId(GhostEntity.class, EntityDataSerializers.OPTIONAL_UUID);
     private static final EntityDataAccessor<Optional<UUID>> DATA_TARGET = SynchedEntityData.defineId(GhostEntity.class, EntityDataSerializers.OPTIONAL_UUID);
-    private static final EntityDataAccessor<Boolean> DATA_VANISHED = SynchedEntityData.defineId(GhostEntity.class, EntityDataSerializers.BOOLEAN);
 
     private long despawnTick;
-    private int lookAwayTimer = 0;
     private int interactionCooldown = 0;
-    private int vanishTimer = 0;
-    private int reappearDelay = 0;
     private int speakCooldown = 0;
+    private static final int SPEAK_INTERVAL = 200;
 
     public GhostEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -50,15 +46,15 @@ public class GhostEntity extends PathfinderMob {
         super.defineSynchedData();
         this.entityData.define(DATA_SKIN_OWNER, Optional.empty());
         this.entityData.define(DATA_TARGET, Optional.empty());
-        this.entityData.define(DATA_VANISHED, false);
     }
 
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(1, new OpenDoorGoal(this, false));
         this.goalSelector.addGoal(2, new RandomStrollGoal(this, 1.0D));
+        this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 8.0F));
+        this.goalSelector.addGoal(4, new FollowPlayerGoal(this, 1.0D, 3.0F, 10.0F));
     }
-
 
     public static AttributeSupplier.Builder createAttributes() {
         return PathfinderMob.createMobAttributes()
@@ -80,15 +76,6 @@ public class GhostEntity extends PathfinderMob {
 
     public UUID getTargetPlayer() {
         return this.entityData.get(DATA_TARGET).orElse(null);
-    }
-
-    public boolean isVanished() {
-        return this.entityData.get(DATA_VANISHED);
-    }
-
-    private void setVanished(boolean vanished) {
-        this.entityData.set(DATA_VANISHED, vanished);
-        this.setInvisible(vanished);
     }
 
     public void setDespawnTime(int ticks) {
@@ -119,25 +106,6 @@ public class GhostEntity extends PathfinderMob {
             return;
         }
 
-        if (isVanished()) {
-            reappearDelay--;
-            if (reappearDelay <= 0) {
-                teleportToBlindSpot(target);
-                setVanished(false);
-                vanishTimer = 0;
-            }
-            return;
-        }
-
-        vanishTimer++;
-        if (vanishTimer > 100 + random.nextInt(200)) {
-            setVanished(true);
-            reappearDelay = 60 + random.nextInt(120);
-            vanishTimer = 0;
-            level().broadcastEntityEvent(this, (byte) 60);
-            return;
-        }
-
         if (interactionCooldown <= 0) {
             BlockPos pos = this.blockPosition();
             searchLoop:
@@ -158,83 +126,76 @@ public class GhostEntity extends PathfinderMob {
             interactionCooldown--;
         }
 
-        Vec3 toGhost = this.position().subtract(target.position()).normalize();
-        double dot = target.getLookAngle().dot(toGhost);
-        if (dot > 0.85) {
-            lookAwayTimer++;
-            if (lookAwayTimer > 20) {
-                teleportBehind(target);
-                ServerStressManager.addAcuteEvent(target.getUUID());
-                lookAwayTimer = 0;
-            }
-        } else {
-            lookAwayTimer = 0;
-        }
-
-        if (target.swinging && !this.swinging) {
-            this.swing(target.getUsedItemHand());
-        }
-
-        UUID skinOwner = getSkinOwner();
-        if (skinOwner != null) {
-            Player source = level().getPlayerByUUID(skinOwner);
-            if (source != null && distanceToSqr(source) < 256) {
-                this.getLookControl().setLookAt(source);
-            }
-        }
-
-        if (speakCooldown <= 0 && random.nextInt(200) == 0) {
-            if (target instanceof ServerPlayer serverTarget) {
+        if (speakCooldown <= 0) {
+            if (target instanceof ServerPlayer) {
                 GhostVoicePlayer.trySpeak(this);
-                speakCooldown = 400 + random.nextInt(400);
+                speakCooldown = SPEAK_INTERVAL + random.nextInt(50);
             }
         } else {
             speakCooldown--;
         }
     }
 
-    private void teleportBehind(Player target) {
-        Vec3 lookVec = target.getLookAngle().normalize();
-        Vec3 behind = target.position().subtract(lookVec.scale(3));
-        for (int attempt = 0; attempt < 10; attempt++) {
-            double x = behind.x + (random.nextDouble() - 0.5) * 2;
-            double z = behind.z + (random.nextDouble() - 0.5) * 2;
-            double y = target.getY();
-            BlockPos pos = BlockPos.containing(x, y, z);
-            if (level().getBlockState(pos).isAir() && level().getBlockState(pos.above()).isAir()) {
-                this.teleportTo(x, y, z);
-                break;
-            }
-        }
-    }
+    private static class FollowPlayerGoal extends Goal {
+        private final GhostEntity ghost;
+        private final double speedModifier;
+        private final float stopDistance;
+        private final float followDistance;
+        private Player target;
+        private double x, y, z;
 
-    private void teleportToBlindSpot(Player target) {
-        for (int attempt = 0; attempt < 20; attempt++) {
-            double angle = random.nextDouble() * 2 * Math.PI;
-            double distance = 5 + random.nextDouble() * 8;
-            double dx = Math.cos(angle) * distance;
-            double dz = Math.sin(angle) * distance;
-            double x = target.getX() + dx;
-            double z = target.getZ() + dz;
-            double y = target.getY() + random.nextInt(3) - 1;
-            BlockPos pos = BlockPos.containing(x, y, z);
-            if (level().getBlockState(pos).isAir() && level().getBlockState(pos.above()).isAir()) {
-                this.teleportTo(x, y, z);
-                break;
+        public FollowPlayerGoal(GhostEntity ghost, double speed, float stopDist, float followDist) {
+            this.ghost = ghost;
+            this.speedModifier = speed;
+            this.stopDistance = stopDist;
+            this.followDistance = followDist;
+        }
+
+        @Override
+        public boolean canUse() {
+            UUID targetId = ghost.getTargetPlayer();
+            if (targetId == null) return false;
+            this.target = ghost.level().getPlayerByUUID(targetId);
+            if (target == null) return false;
+            return ghost.distanceTo(target) > followDistance;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            return target != null && ghost.distanceTo(target) > stopDistance && ghost.distanceTo(target) <= followDistance * 2;
+        }
+
+        @Override
+        public void start() {
+            Vec3 lookVec = target.getLookAngle().normalize();
+            double angle = ghost.random.nextDouble() * 2 * Math.PI;
+            double offsetX = Math.cos(angle) * 2;
+            double offsetZ = Math.sin(angle) * 2;
+            this.x = target.getX() - lookVec.x * 3 + offsetX;
+            this.y = target.getY();
+            this.z = target.getZ() - lookVec.z * 3 + offsetZ;
+            ghost.getNavigation().moveTo(x, y, z, speedModifier);
+        }
+
+        @Override
+        public void tick() {
+            if (target == null) return;
+            if (ghost.distanceToSqr(x, y, z) < 4 || ghost.tickCount % 40 == 0) {
+                Vec3 lookVec = target.getLookAngle().normalize();
+                double angle = ghost.random.nextDouble() * 2 * Math.PI;
+                double offsetX = Math.cos(angle) * 2;
+                double offsetZ = Math.sin(angle) * 2;
+                this.x = target.getX() - lookVec.x * 3 + offsetX;
+                this.y = target.getY();
+                this.z = target.getZ() - lookVec.z * 3 + offsetZ;
+                ghost.getNavigation().moveTo(x, y, z, speedModifier);
             }
         }
     }
 
     @Override
     public void handleEntityEvent(byte id) {
-        if (id == 60 && level().isClientSide) {
-            for (int i = 0; i < 10; i++) {
-                level().addParticle(ParticleTypes.SMOKE, getX(), getY() + 1, getZ(),
-                        0, 0.1, 0);
-            }
-        } else {
-            super.handleEntityEvent(id);
-        }
+        super.handleEntityEvent(id);
     }
 
     @Override
@@ -246,9 +207,6 @@ public class GhostEntity extends PathfinderMob {
         if (target != null) compound.putUUID("TargetPlayer", target);
         long currentTick = level() instanceof ServerLevel ? ((ServerLevel)level()).getServer().getTickCount() : 0;
         compound.putInt("RemainingTicks", (int)(despawnTick - (level().getGameTime() - (currentTick - level().getGameTime()))));
-        compound.putBoolean("Vanished", isVanished());
-        compound.putInt("VanishTimer", vanishTimer);
-        compound.putInt("ReappearDelay", reappearDelay);
     }
 
     @Override
@@ -265,9 +223,6 @@ public class GhostEntity extends PathfinderMob {
                 this.despawnTick = level().getGameTime() + remaining;
             }
         }
-        setVanished(compound.getBoolean("Vanished"));
-        vanishTimer = compound.getInt("VanishTimer");
-        reappearDelay = compound.getInt("ReappearDelay");
     }
 
     @Override

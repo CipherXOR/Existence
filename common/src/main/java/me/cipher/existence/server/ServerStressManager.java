@@ -2,13 +2,17 @@ package me.cipher.existence.server;
 
 import io.netty.buffer.Unpooled;
 import me.cipher.existence.entity.GhostEntity;
-import me.cipher.existence.network.ExistenceNetwork;
-import me.cipher.existence.network.StressSyncPacket;
+import me.cipher.existence.network.*;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.monster.Monster;
@@ -19,16 +23,15 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 public class ServerStressManager {
+    private static final Random RANDOM = new Random();
     private static final Map<UUID, Double> LOAD_MAP = new HashMap<>();
     private static final Map<UUID, BlockPos> LAST_GHOST_POS = new HashMap<>();
     private static final Map<UUID, Boolean> SAFE_ZONE_CACHE = new HashMap<>();
     private static final Map<UUID, Integer> SAFE_ZONE_COOLDOWN = new HashMap<>();
+    private static final Map<UUID, Long> LAST_HALLUCINATION_TICK = new HashMap<>();
     private static int syncCounter = 0;
     private static final double RATE = 0.01;
     private static final int SYNC_INTERVAL = 20;
@@ -102,7 +105,54 @@ public class ServerStressManager {
             if (syncCounter % SYNC_INTERVAL == 0) {
                 syncLoad(player);
             }
+
+            if (load > 80) {
+                long currentTick = server.getTickCount();
+                Long last = LAST_HALLUCINATION_TICK.get(uuid);
+                if (last == null || currentTick - last > 6000) {
+                    if (RANDOM.nextInt(2000) == 0) {
+                        triggerHallucination(player);
+                        LAST_HALLUCINATION_TICK.put(uuid, currentTick);
+                    }
+                }
+            }
         }
+    }
+
+    private static void triggerHallucination(ServerPlayer player) {
+        Level level = player.level();
+        BlockPos center = player.blockPosition();
+        List<BlockPos> doors = new ArrayList<>();
+
+        for (int dx = -5; dx <= 5; dx++) {
+            for (int dy = -5; dy <= 5; dy++) {
+                for (int dz = -5; dz <= 5; dz++) {
+                    BlockPos pos = center.offset(dx, dy, dz);
+                    BlockState state = level.getBlockState(pos);
+                    if (state.is(BlockTags.DOORS)) {
+                        doors.add(pos);
+                    }
+                }
+            }
+        }
+
+        int duration = 200;
+        for (BlockPos doorPos : doors) {
+            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+            new HallucinationDoorPacket(doorPos, duration).encode(buf);
+            dev.architectury.networking.NetworkManager.sendToPlayer(player, ExistenceNetwork.HALLUCINATION_DOOR_ID, buf);
+        }
+
+        player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 200, 0, false, false, true));
+
+        Component message = Component.translatable("message.existence.you_are_not_alone")
+                .withStyle(ChatFormatting.DARK_RED, ChatFormatting.ITALIC);
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        new HallucinationMessagePacket(message, 80).encode(buf);
+        dev.architectury.networking.NetworkManager.sendToPlayer(player, ExistenceNetwork.HALLUCINATION_MESSAGE_ID, buf);
+        FriendlyByteBuf soundBuf = new FriendlyByteBuf(Unpooled.buffer());
+        new HallucinationSoundPacket().encode(soundBuf);
+        dev.architectury.networking.NetworkManager.sendToPlayer(player, ExistenceNetwork.HALLUCINATION_SOUND_ID, soundBuf);
     }
 
     private static boolean isAlone(ServerPlayer player, MinecraftServer server) {
@@ -113,6 +163,20 @@ public class ServerStressManager {
             }
         }
         return true;
+    }
+
+    public static void saveData(Player player, CompoundTag nbt) {
+        if (!(player instanceof ServerPlayer)) return;
+        double stress = getLoadDouble(player.getUUID());
+        nbt.putDouble("existence_stress", stress);
+    }
+
+    public static void loadData(Player player, CompoundTag nbt) {
+        if (!(player instanceof ServerPlayer)) return;
+        if (nbt.contains("existence_stress", 6)) {
+            double stress = nbt.getDouble("existence_stress");
+            setLoadDouble(player.getUUID(), stress);
+        }
     }
 
     private static boolean isInSafeZone(ServerPlayer player) {

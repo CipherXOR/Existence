@@ -4,11 +4,18 @@
   "version": "${version}",
   "name": "Existence",
   "description": "Are you truly alone?",
-  "authors": [
-    "Cipher"
+  "authors" : [
+    {
+      "name" : "Cipher",
+      "contact" : {
+        "email" : "me.cipher@outlook.com"
+      }
+    }
   ],
   "contact": {
-    "homepage": ""
+    "homepage": "https://github.com/CipherXOR/Existence",
+    "sources": "https://github.com/CipherXOR/Existence",
+    "issues": "https://github.com/CipherXOR/Existence/issues"
   },
   "license": "LGPL-3.0",
   "icon": "icon.png",

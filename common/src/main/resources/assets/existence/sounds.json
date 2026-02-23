@@ -23,5 +23,8 @@
       }
     ],
     "subtitle": "subtitles.existence.recorder_horror"
+  },
+  "recorder_horror2": {
+    "sounds": ["existence:recorder_horror2"]
   }
 }

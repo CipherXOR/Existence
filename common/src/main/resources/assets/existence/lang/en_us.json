@@ -7,5 +7,6 @@
   "book.existence.relic.page3": "Trust no one, not even yourself.",
   "item.existence.recorder": "Recorder",
   "item.existence.recorder.desc": "§7An old recorder, seems to hold something...No",
-  "subtitles.existence.recorder_horror": "Recorder: eerie sound"
+  "subtitles.existence.recorder_horror": "Recorder: eerie sound",
+  "message.existence.you_are_not_alone": "You are not alone"
 }
