@@ -1,5 +1,14 @@
 # Existence
 
+![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-blue?style=for-the-badge)
+
+![Forge](https://img.shields.io/badge/Forge-363636?style=for-the-badge&logo=forge)
+![Fabric](https://img.shields.io/badge/Fabric-363636?style=for-the-badge&logo=fabric)
+![NeoForge](https://img.shields.io/badge/NeoForge-363636?style=for-the-badge&logo=neoforge)
+![Quilt](https://img.shields.io/badge/Quilt-363636?style=for-the-badge&logo=quilt)
+
+[![Modrinth](https://img.shields.io/modrinth/dt/existence?style=for-the-badge&logo=modrinth&label=Modrinth)](https://modrinth.com/mod/existence)
+
 ## Overview
 
 _A social horror mod that makes you feel alone among friends._
