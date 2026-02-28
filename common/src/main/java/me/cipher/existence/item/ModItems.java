@@ -10,7 +10,16 @@ public class ModItems {
             new DeferredRegistry<>(Existence.MOD_ID, "item");
 
     public static final RegistryEntry<Item> RECORDER =
-            ITEMS.register("recorder", () -> new RecorderItem(new Item.Properties()));
+            ITEMS.register("recorder", () -> new RecorderItem(new Item.Properties().stacksTo(1)));
+
+    public static final RegistryEntry<Item> DIARY_FRAGMENT_1 =
+            ITEMS.register("diary_fragment_1", () -> new DiaryFragmentItem(new Item.Properties().stacksTo(1)));
+
+    public static final RegistryEntry<Item> DIARY_FRAGMENT_2 =
+            ITEMS.register("diary_fragment_2", () -> new DiaryFragmentItem(new Item.Properties().stacksTo(1)));
+
+    public static final RegistryEntry<Item> DIARY_BOOK =
+            ITEMS.register("diary_book", () -> new DiaryBookItem(new Item.Properties().stacksTo(1)));
 
     public static void init() {}
 }

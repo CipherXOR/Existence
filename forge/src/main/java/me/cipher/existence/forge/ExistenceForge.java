@@ -8,7 +8,7 @@ import me.cipher.existence.client.render.GhostEntityRenderer;
 import me.cipher.existence.entity.GhostEntity;
 import me.cipher.existence.entity.ModEntities;
 import me.cipher.existence.item.ModItems;
-import me.cipher.existence.item.RecorderItem;
+import me.cipher.existence.registry.RegistryEntry;
 import me.cipher.existence.sound.ModSounds;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -18,7 +18,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.Item;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RenderGuiEvent;
@@ -30,10 +29,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegisterEvent;
-import net.minecraftforge.registries.RegistryObject;
 
 import java.util.Random;
 
@@ -43,46 +40,13 @@ public class ExistenceForge {
     private static int messageCooldown = 0;
     private static int hallucinationCooldown = 0;
 
-    private static final DeferredRegister<EntityType<?>> ENTITY_REGISTER = DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, Existence.MOD_ID);
-    private static final DeferredRegister<Item> ITEM_REGISTER = DeferredRegister.create(ForgeRegistries.ITEMS, Existence.MOD_ID);
-    private static final DeferredRegister<SoundEvent> SOUND_REGISTER = DeferredRegister.create(ForgeRegistries.SOUND_EVENTS, Existence.MOD_ID);
-
-    private static final RegistryObject<EntityType<GhostEntity>> GHOST_OBJECT = ENTITY_REGISTER.register("ghost",
-            () -> EntityType.Builder.of(GhostEntity::new, MobCategory.MONSTER)
-                    .sized(0.6F, 1.8F)
-                    .clientTrackingRange(8)
-                    .build("ghost"));
-
-    private static final RegistryObject<Item> RECORDER_OBJECT = ITEM_REGISTER.register("recorder",
-            () -> new RecorderItem(new Item.Properties()));
-
-    private static final RegistryObject<SoundEvent> RECORDER_HORROR_OBJECT = SOUND_REGISTER.register("recorder_horror",
-            () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(Existence.MOD_ID, "recorder_horror")));
-
-    private static final RegistryObject<SoundEvent> RECORDER_HORROR2_OBJECT = SOUND_REGISTER.register("recorder_horror2",
-            () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(Existence.MOD_ID, "recorder_horror2")));
-
     public ExistenceForge() {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
-
-        ENTITY_REGISTER.register(modBus);
-        ITEM_REGISTER.register(modBus);
-        SOUND_REGISTER.register(modBus);
-
-        modBus.addListener((RegisterEvent event) -> {
-            if (event.getRegistryKey().equals(Registries.ENTITY_TYPE)) {
-                ModEntities.GHOST.initialize(GHOST_OBJECT.get());
-            } else if (event.getRegistryKey().equals(Registries.ITEM)) {
-                ModItems.RECORDER.initialize(RECORDER_OBJECT.get());
-            } else if (event.getRegistryKey().equals(Registries.SOUND_EVENT)) {
-                ModSounds.RECORDER_HORROR.initialize(RECORDER_HORROR_OBJECT.get());
-                ModSounds.RECORDER_HORROR2.initialize(RECORDER_HORROR2_OBJECT.get());
-            }
-        });
 
         modBus.addListener(this::commonSetup);
         modBus.addListener(this::registerEntityRenderers);
         modBus.addListener(this::onEntityAttributeCreation);
+        modBus.addListener(this::onRegister);
 
         MinecraftForge.EVENT_BUS.register(this);
         MinecraftForge.EVENT_BUS.addListener((RenderGuiEvent.Post event) -> {
@@ -108,6 +72,28 @@ public class ExistenceForge {
                 guiGraphics.pose().popPose();
             }
         });
+    }
+
+    private void onRegister(RegisterEvent event) {
+        if (event.getRegistryKey().equals(Registries.ENTITY_TYPE)) {
+            for (RegistryEntry entry : ModEntities.ENTITIES.getEntries()) {
+                EntityType<?> type = (EntityType<?>) entry.getSupplier().get();
+                entry.initialize(type);
+                event.register(ForgeRegistries.ENTITY_TYPES.getRegistryKey(), new ResourceLocation(entry.getId()), () -> type);
+            }
+        } else if (event.getRegistryKey().equals(Registries.ITEM)) {
+            for (RegistryEntry entry : ModItems.ITEMS.getEntries()) {
+                Item item = (Item) entry.getSupplier().get();
+                entry.initialize(item);
+                event.register(ForgeRegistries.ITEMS.getRegistryKey(), new ResourceLocation(entry.getId()), () -> item);
+            }
+        } else if (event.getRegistryKey().equals(Registries.SOUND_EVENT)) {
+            for (RegistryEntry entry : ModSounds.SOUNDS.getEntries()) {
+                SoundEvent sound = (SoundEvent) entry.getSupplier().get();
+                entry.initialize(sound);
+                event.register(ForgeRegistries.SOUND_EVENTS.getRegistryKey(), new ResourceLocation(entry.getId()), () -> sound);
+            }
+        }
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

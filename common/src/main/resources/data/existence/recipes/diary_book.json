@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    { "item": "existence:diary_fragment_1" },
+    { "item": "existence:diary_fragment_2" }
+  ],
+  "result": {
+    "item": "existence:diary_book"
+  }
+}

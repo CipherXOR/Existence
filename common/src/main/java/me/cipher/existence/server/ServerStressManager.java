@@ -31,6 +31,7 @@ public class ServerStressManager {
     private static final Map<UUID, BlockPos> LAST_GHOST_POS = new HashMap<>();
     private static final Map<UUID, Boolean> SAFE_ZONE_CACHE = new HashMap<>();
     private static final Map<UUID, Integer> SAFE_ZONE_COOLDOWN = new HashMap<>();
+    private static final Map<UUID, Long> LAST_HALLUCINATION_TICK = new HashMap<>();
     private static int syncCounter = 0;
     private static final double RATE = 0.01;
     private static final int SYNC_INTERVAL = 20;
@@ -43,6 +44,7 @@ public class ServerStressManager {
     private static final double SLEEP_REWARD = -30.0;
     private static final double HEALTHY_FOOD_REWARD = -1.0;
     private static final double ADVANCEMENT_REWARD = -5.0;
+    private static final long MIN_HALLUCINATION_INTERVAL = 600;
 
     public static void tick(MinecraftServer server) {
         syncCounter++;
@@ -50,7 +52,12 @@ public class ServerStressManager {
             UUID uuid = player.getUUID();
             double load = getLoadDouble(uuid);
 
-            if (player.level().getMaxLocalRawBrightness(player.blockPosition()) < 7) {
+            boolean isDay = player.level().isDay();
+            boolean canSeeSky = player.level().canSeeSky(player.blockPosition());
+
+            if (isDay && canSeeSky) {
+                load -= RATE * 2;
+            } else if (player.level().getMaxLocalRawBrightness(player.blockPosition()) < 7) {
                 load += RATE;
             } else {
                 load -= RATE;
@@ -106,18 +113,22 @@ public class ServerStressManager {
             }
 
             double hallucinationChance = calculateHallucinationChance(load);
-            if (RANDOM.nextDouble() < hallucinationChance) {
-                triggerHallucination(player);
+            long currentTick = server.getTickCount();
+            Long lastTick = LAST_HALLUCINATION_TICK.get(uuid);
+            if (lastTick == null || currentTick - lastTick >= MIN_HALLUCINATION_INTERVAL) {
+                if (RANDOM.nextDouble() < hallucinationChance) {
+                    triggerHallucination(player);
+                    LAST_HALLUCINATION_TICK.put(uuid, currentTick);
+                }
             }
         }
     }
 
     private static double calculateHallucinationChance(double load) {
-        if (load < 30) return 0.0;
-        if (load < 60) return 0.0005;
-        if (load < 80) return 0.002;
-        if (load < 95) return 0.01;
-        return 0.03;
+        if (load < 60) return 0.0;
+        if (load < 75) return 0.0002;
+        if (load < 90) return 0.0005;
+        return 0.001;
     }
 
     private static void triggerHallucination(ServerPlayer player) {

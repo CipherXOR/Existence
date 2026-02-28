@@ -3,6 +3,7 @@ package me.cipher.existence.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import me.cipher.existence.Existence;
 import me.cipher.existence.client.VisiblePlayerManager;
+import me.cipher.existence.util.HiddenFromAware;
 import me.cipher.existence.util.OwnerAwareItemEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -29,11 +30,14 @@ public class EntityRenderDispatcherMixin {
             if (!VisiblePlayerManager.isVisible(entity.getUUID())) {
                 ci.cancel();
             }
-        }
-
-        else if (entity instanceof ItemEntity) {
+        } else if (entity instanceof ItemEntity) {
             UUID owner = ((OwnerAwareItemEntity) entity).getOwnerUUID();
             if (owner != null && !Existence.VISIBILITY.isVisible(localPlayer.getUUID(), owner)) {
+                ci.cancel();
+                return;
+            }
+            UUID hiddenFrom = ((HiddenFromAware) entity).getHiddenFrom();
+            if (hiddenFrom != null && hiddenFrom.equals(localPlayer.getUUID())) {
                 ci.cancel();
             }
         }

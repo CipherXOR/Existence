@@ -15,9 +15,11 @@ import me.cipher.existence.entity.ModEntities;
 import me.cipher.existence.item.ModItems;
 import me.cipher.existence.network.ExistenceNetwork;
 import me.cipher.existence.network.VisiblePlayerPacket;
+import me.cipher.existence.server.DiaryProgressData;
 import me.cipher.existence.server.ServerStressManager;
 import me.cipher.existence.server.ServerVisibilityChecker;
 import me.cipher.existence.server.ServerVisibleManager;
+import me.cipher.existence.util.HiddenFromAware;
 import me.cipher.existence.util.OwnerAwareItemEntity;
 import me.cipher.existence.util.VisibilityChecker;
 import net.minecraft.core.BlockPos;
@@ -27,9 +29,12 @@ import net.minecraft.nbt.StringTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -44,6 +49,8 @@ public class Existence {
     private static final int MIN_GHOST_INTERVAL = 6000;
     private static final int MAX_GHOST_INTERVAL = 9600;
     private static final int GHOST_RETRY_INTERVAL = 600;
+    private static long nextDiarySpawnTime = 0;
+    private static final int DIARY_SPAWN_INTERVAL = 6000;
     public static VisibilityChecker VISIBILITY;
 
     public static void register() {
@@ -84,6 +91,17 @@ public class Existence {
             return EventResult.pass();
         });
 
+        PlayerEvent.PICKUP_ITEM_POST.register((player, itemEntity, stack) -> {
+            if (player.level().isClientSide) return;
+            ServerLevel level = (ServerLevel) player.level();
+            Item item = stack.getItem();
+            if (item == ModItems.DIARY_FRAGMENT_1.get()) {
+                handleFragment1Pickup(level, (ServerPlayer) player);
+            } else if (item == ModItems.DIARY_FRAGMENT_2.get()) {
+                handleFragment2Pickup(level);
+            }
+        });
+
         PlayerEvent.PLAYER_JOIN.register((player) -> {
             if (!player.level().isClientSide) {
                 MinecraftServer server = player.server;
@@ -110,7 +128,34 @@ public class Existence {
             }
 
             handleGhostSpawn(server);
+            handleDiarySpawn(server);
         });
+    }
+
+    private static void handleFragment1Pickup(ServerLevel level, ServerPlayer player) {
+        DiaryProgressData data = DiaryProgressData.get(level);
+        if (data.isFragment1Obtained()) return;
+
+        data.setFragment1Obtained(player.getUUID());
+
+        for (Entity entity : level.getAllEntities()) {
+            if (entity instanceof ItemEntity ie && ie.getItem().getItem() == ModItems.DIARY_FRAGMENT_1.get() && !ie.isRemoved()) {
+                ie.discard();
+            }
+        }
+    }
+
+    private static void handleFragment2Pickup(ServerLevel level) {
+        DiaryProgressData data = DiaryProgressData.get(level);
+        if (!data.isFragment2Generated()) {
+            data.setFragment2Generated();
+        }
+
+        for (Entity entity : level.getAllEntities()) {
+            if (entity instanceof ItemEntity ie && ie.getItem().getItem() == ModItems.DIARY_FRAGMENT_2.get() && !ie.isRemoved()) {
+                ie.discard();
+            }
+        }
     }
 
     private static void serverPlayer(ServerPlayer player, long currentTick, ServerPlayer other) {
@@ -132,10 +177,10 @@ public class Existence {
                 .mapToDouble(p -> ServerStressManager.getLoad(p.getUUID()))
                 .average().orElse(0.0);
 
-        int adjustedMin = (int) (MIN_GHOST_INTERVAL * (1.0 - avgStress / 200.0));
-        int adjustedMax = (int) (MAX_GHOST_INTERVAL * (1.0 - avgStress / 200.0));
-        adjustedMin = Math.max(600, adjustedMin);
-        adjustedMax = Math.max(1200, adjustedMax);
+        int adjustedMin = (int) (MIN_GHOST_INTERVAL * (1.0 - avgStress / 300.0));
+        int adjustedMax = (int) (MAX_GHOST_INTERVAL * (1.0 - avgStress / 300.0));
+        adjustedMin = Math.max(1200, adjustedMin);
+        adjustedMax = Math.max(2400, adjustedMax);
 
         if (nextGhostSpawnTime == 0) {
             nextGhostSpawnTime = currentTick + adjustedMin + RANDOM.nextInt(adjustedMax - adjustedMin + 1);
@@ -156,22 +201,28 @@ public class Existence {
 
     private static boolean trySpawnGhost(MinecraftServer server) {
         List<ServerPlayer> players = server.getPlayerList().getPlayers();
-        if (players.size() < 2) return false;
+        if (players.isEmpty()) return false;
 
-        Map<ServerPlayer, Double> weightedTargets = new HashMap<>();
-        for (ServerPlayer p : players) {
-            double stress = ServerStressManager.getLoad(p.getUUID());
-            weightedTargets.put(p, stress);
+        ServerPlayer target;
+        ServerPlayer skinSource;
+
+        if (players.size() == 1) {
+            target = players.get(0);
+            skinSource = target;
+        } else {
+            Map<ServerPlayer, Double> weightedTargets = new HashMap<>();
+            for (ServerPlayer p : players) {
+                double stress = ServerStressManager.getLoad(p.getUUID());
+                weightedTargets.put(p, stress);
+            }
+            target = selectWeightedRandom(weightedTargets, server.overworld().getRandom());
+
+            List<ServerPlayer> skinSources = players.stream()
+                    .filter(p -> p != target)
+                    .toList();
+            if (skinSources.isEmpty()) return false;
+            skinSource = skinSources.get(server.overworld().getRandom().nextInt(skinSources.size()));
         }
-
-        ServerPlayer target = selectWeightedRandom(weightedTargets, server.overworld().getRandom());
-
-        List<ServerPlayer> skinSources = players.stream()
-                .filter(p -> p != target)
-                .toList();
-        if (skinSources.isEmpty()) return false;
-
-        ServerPlayer skinSource = skinSources.get(server.overworld().getRandom().nextInt(skinSources.size()));
 
         Level level = target.level();
         Vec3 lookVec = target.getLookAngle().normalize();
@@ -232,6 +283,63 @@ public class Existence {
             }
         }
         return weights.keySet().iterator().next();
+    }
+
+    private static void handleDiarySpawn(MinecraftServer server) {
+        if (server.getTickCount() < nextDiarySpawnTime) return;
+        if (server.getTickCount() % DIARY_SPAWN_INTERVAL != 0) return;
+
+        ServerLevel level = server.overworld();
+        DiaryProgressData data = DiaryProgressData.get(level);
+        List<ServerPlayer> players = level.players();
+
+        if (players.isEmpty()) return;
+
+        if (!data.isFragment1Obtained()) {
+            if (trySpawnDiaryFragment(level, 1, null)) {
+                nextDiarySpawnTime = server.getTickCount() + DIARY_SPAWN_INTERVAL;
+            }
+        } else if (!data.isFragment2Generated()) {
+            UUID holder = data.getFragment1Holder();
+            if (players.size() == 1) {
+                if (trySpawnDiaryFragment(level, 2, null)) {
+                    data.setFragment2Generated();
+                    nextDiarySpawnTime = server.getTickCount() + DIARY_SPAWN_INTERVAL;
+                }
+            } else {
+                if (trySpawnDiaryFragment(level, 2, holder)) {
+                    data.setFragment2Generated();
+                    nextDiarySpawnTime = server.getTickCount() + DIARY_SPAWN_INTERVAL;
+                }
+            }
+        }
+    }
+
+    private static boolean trySpawnDiaryFragment(ServerLevel level, int fragmentNumber, UUID hiddenFrom) {
+        List<ServerPlayer> players = level.players();
+        if (players.isEmpty()) return false;
+        ServerPlayer targetPlayer = players.get(level.random.nextInt(players.size()));
+
+        for (int attempt = 0; attempt < 20; attempt++) {
+            double angle = level.random.nextDouble() * 2 * Math.PI;
+            double distance = 10 + level.random.nextDouble() * 10;
+            double x = targetPlayer.getX() + Math.cos(angle) * distance;
+            double z = targetPlayer.getZ() + Math.sin(angle) * distance;
+            double y = targetPlayer.getY() + level.random.nextInt(5) - 2;
+            BlockPos pos = BlockPos.containing(x, y, z);
+            if (level.getBlockState(pos).isAir() && level.getBlockState(pos.below()).isSolid()) {
+                ItemStack stack = (fragmentNumber == 1) ?
+                        new ItemStack(ModItems.DIARY_FRAGMENT_1.get()) :
+                        new ItemStack(ModItems.DIARY_FRAGMENT_2.get());
+                ItemEntity itemEntity = new ItemEntity(level, x, y, z, stack);
+                if (hiddenFrom != null) {
+                    ((HiddenFromAware) itemEntity).setHiddenFrom(hiddenFrom);
+                }
+                level.addFreshEntity(itemEntity);
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void triggerRealReveal(MinecraftServer server) {

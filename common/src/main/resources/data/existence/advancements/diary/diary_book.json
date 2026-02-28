@@ -1,0 +1,33 @@
+{
+  "parent": "existence:diary/fragment2",
+  "display": {
+    "icon": {
+      "item": "existence:diary_book"
+    },
+    "background": "existence:textures/gui/advancements/backgrounds/existence.png",
+    "title": {
+      "translate": "advancement.existence.diary_book"
+    },
+    "description": {
+      "translate": "advancement.existence.diary_book.desc"
+    },
+    "frame": "goal",
+    "show_toast": true,
+    "announce_to_chat": true,
+    "hidden": false
+  },
+  "criteria": {
+    "has_diary": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": [
+              "existence:diary_book"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

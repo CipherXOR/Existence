@@ -1,6 +1,7 @@
 package me.cipher.existence.mixin;
 
 import me.cipher.existence.server.ServerVisibleManager;
+import me.cipher.existence.util.HiddenFromAware;
 import me.cipher.existence.util.OwnerAwareItemEntity;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
@@ -12,16 +13,23 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Optional;
 import java.util.UUID;
+
 @Mixin(ItemEntity.class)
-public abstract class ItemEntityMixin extends Entity implements OwnerAwareItemEntity {
+public abstract class ItemEntityMixin extends Entity implements OwnerAwareItemEntity, HiddenFromAware {
+    @Unique
     private static final EntityDataAccessor<Optional<UUID>> DATA_OWNER =
             SynchedEntityData.defineId(ItemEntity.class, EntityDataSerializers.OPTIONAL_UUID);
+    @Unique
+    private static final EntityDataAccessor<Optional<UUID>> DATA_HIDDEN_FROM =
+            SynchedEntityData.defineId(ItemEntity.class, EntityDataSerializers.OPTIONAL_UUID);
+
     protected ItemEntityMixin(EntityType<?> entityType, Level level) {
         super(entityType, level);
     }
@@ -29,6 +37,7 @@ public abstract class ItemEntityMixin extends Entity implements OwnerAwareItemEn
     @Inject(method = "defineSynchedData", at = @At("TAIL"))
     private void onDefineSynchedData(CallbackInfo ci) {
         this.entityData.define(DATA_OWNER, Optional.empty());
+        this.entityData.define(DATA_HIDDEN_FROM, Optional.empty());
     }
 
     @Inject(method = "addAdditionalSaveData", at = @At("HEAD"))
@@ -36,6 +45,10 @@ public abstract class ItemEntityMixin extends Entity implements OwnerAwareItemEn
         UUID owner = getOwnerUUID();
         if (owner != null) {
             tag.putUUID("Owner", owner);
+        }
+        UUID hidden = getHiddenFrom();
+        if (hidden != null) {
+            tag.putUUID("HiddenFrom", hidden);
         }
     }
 
@@ -46,16 +59,24 @@ public abstract class ItemEntityMixin extends Entity implements OwnerAwareItemEn
         } else {
             setOwnerUUID(null);
         }
+        if (tag.hasUUID("HiddenFrom")) {
+            setHiddenFrom(tag.getUUID("HiddenFrom"));
+        } else {
+            setHiddenFrom(null);
+        }
     }
 
     @Inject(method = "playerTouch", at = @At("HEAD"), cancellable = true)
     private void onPlayerTouch(Player player, CallbackInfo ci) {
         if (!this.level().isClientSide) {
             UUID owner = getOwnerUUID();
-            if (owner != null) {
-                if (!ServerVisibleManager.isVisible(player.getUUID(), owner)) {
-                    ci.cancel();
-                }
+            if (owner != null && !ServerVisibleManager.isVisible(player.getUUID(), owner)) {
+                ci.cancel();
+                return;
+            }
+            UUID hidden = getHiddenFrom();
+            if (hidden != null && hidden.equals(player.getUUID())) {
+                ci.cancel();
             }
         }
     }
@@ -82,5 +103,15 @@ public abstract class ItemEntityMixin extends Entity implements OwnerAwareItemEn
     @Override
     public void setOwnerUUID(UUID uuid) {
         this.entityData.set(DATA_OWNER, Optional.ofNullable(uuid));
+    }
+
+    @Override
+    public UUID getHiddenFrom() {
+        return this.entityData.get(DATA_HIDDEN_FROM).orElse(null);
+    }
+
+    @Override
+    public void setHiddenFrom(UUID uuid) {
+        this.entityData.set(DATA_HIDDEN_FROM, Optional.ofNullable(uuid));
     }
 }
