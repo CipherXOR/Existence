@@ -28,14 +28,14 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 
 public class Existence {
     public static final String MOD_ID = "existence";
@@ -125,13 +125,25 @@ public class Existence {
 
     private static void handleGhostSpawn(MinecraftServer server) {
         long currentTick = server.getTickCount();
+        List<ServerPlayer> players = server.getPlayerList().getPlayers();
+        if (players.isEmpty()) return;
+
+        double avgStress = players.stream()
+                .mapToDouble(p -> ServerStressManager.getLoad(p.getUUID()))
+                .average().orElse(0.0);
+
+        int adjustedMin = (int) (MIN_GHOST_INTERVAL * (1.0 - avgStress / 200.0));
+        int adjustedMax = (int) (MAX_GHOST_INTERVAL * (1.0 - avgStress / 200.0));
+        adjustedMin = Math.max(600, adjustedMin);
+        adjustedMax = Math.max(1200, adjustedMax);
+
         if (nextGhostSpawnTime == 0) {
-            nextGhostSpawnTime = currentTick + MIN_GHOST_INTERVAL + RANDOM.nextInt(MAX_GHOST_INTERVAL - MIN_GHOST_INTERVAL + 1);
+            nextGhostSpawnTime = currentTick + adjustedMin + RANDOM.nextInt(adjustedMax - adjustedMin + 1);
         }
         if (currentTick >= nextGhostSpawnTime) {
             boolean success = trySpawnGhost(server);
             if (success) {
-                int baseInterval = MIN_GHOST_INTERVAL + RANDOM.nextInt(MAX_GHOST_INTERVAL - MIN_GHOST_INTERVAL + 1);
+                int baseInterval = adjustedMin + RANDOM.nextInt(adjustedMax - adjustedMin + 1);
                 if (!server.overworld().isDay()) {
                     baseInterval = baseInterval / 2;
                 }
@@ -145,10 +157,22 @@ public class Existence {
     private static boolean trySpawnGhost(MinecraftServer server) {
         List<ServerPlayer> players = server.getPlayerList().getPlayers();
         if (players.size() < 2) return false;
-        ServerPlayer skinSource = players.get(server.overworld().getRandom().nextInt(players.size()));
-        List<ServerPlayer> candidates = players.stream().filter(p -> p != skinSource).toList();
-        if (candidates.isEmpty()) return false;
-        ServerPlayer target = candidates.get(server.overworld().getRandom().nextInt(candidates.size()));
+
+        Map<ServerPlayer, Double> weightedTargets = new HashMap<>();
+        for (ServerPlayer p : players) {
+            double stress = ServerStressManager.getLoad(p.getUUID());
+            weightedTargets.put(p, stress);
+        }
+
+        ServerPlayer target = selectWeightedRandom(weightedTargets, server.overworld().getRandom());
+
+        List<ServerPlayer> skinSources = players.stream()
+                .filter(p -> p != target)
+                .toList();
+        if (skinSources.isEmpty()) return false;
+
+        ServerPlayer skinSource = skinSources.get(server.overworld().getRandom().nextInt(skinSources.size()));
+
         Level level = target.level();
         Vec3 lookVec = target.getLookAngle().normalize();
         Vec3 behind = target.position().subtract(lookVec.scale(5));
@@ -195,6 +219,19 @@ public class Existence {
             return true;
         }
         return false;
+    }
+
+    private static <T> T selectWeightedRandom(Map<T, Double> weights, RandomSource random) {
+        double totalWeight = weights.values().stream().mapToDouble(Double::doubleValue).sum();
+        double r = random.nextDouble() * totalWeight;
+        double cumulative = 0.0;
+        for (Map.Entry<T, Double> entry : weights.entrySet()) {
+            cumulative += entry.getValue();
+            if (r < cumulative) {
+                return entry.getKey();
+            }
+        }
+        return weights.keySet().iterator().next();
     }
 
     private static void triggerRealReveal(MinecraftServer server) {

@@ -31,11 +31,16 @@ import java.util.UUID;
 public class GhostEntity extends PathfinderMob {
     private static final EntityDataAccessor<Optional<UUID>> DATA_SKIN_OWNER = SynchedEntityData.defineId(GhostEntity.class, EntityDataSerializers.OPTIONAL_UUID);
     private static final EntityDataAccessor<Optional<UUID>> DATA_TARGET = SynchedEntityData.defineId(GhostEntity.class, EntityDataSerializers.OPTIONAL_UUID);
+    private static final EntityDataAccessor<Integer> DATA_GHOST_MODE = SynchedEntityData.defineId(GhostEntity.class, EntityDataSerializers.INT);
 
     private long despawnTick;
     private int interactionCooldown = 0;
     private int speakCooldown = 0;
     private static final int SPEAK_INTERVAL = 200;
+    private int teleportCooldown = 0;
+    private int mimicCooldown = 0;
+    private int traceCooldown = 0;
+    private int vanishCooldown = 0;
 
     public GhostEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -46,6 +51,7 @@ public class GhostEntity extends PathfinderMob {
         super.defineSynchedData();
         this.entityData.define(DATA_SKIN_OWNER, Optional.empty());
         this.entityData.define(DATA_TARGET, Optional.empty());
+        this.entityData.define(DATA_GHOST_MODE, 0);
     }
 
     @Override
@@ -78,6 +84,14 @@ public class GhostEntity extends PathfinderMob {
         return this.entityData.get(DATA_TARGET).orElse(null);
     }
 
+    public void setGhostMode(int mode) {
+        this.entityData.set(DATA_GHOST_MODE, mode);
+    }
+
+    public int getGhostMode() {
+        return this.entityData.get(DATA_GHOST_MODE);
+    }
+
     public void setDespawnTime(int ticks) {
         if (!level().isClientSide) {
             this.despawnTick = level().getGameTime() + ticks;
@@ -106,6 +120,11 @@ public class GhostEntity extends PathfinderMob {
             return;
         }
 
+        double stress = 0;
+        if (target instanceof ServerPlayer serverTarget) {
+            stress = ServerStressManager.getLoad(serverTarget.getUUID());
+        }
+
         if (interactionCooldown <= 0) {
             BlockPos pos = this.blockPosition();
             searchLoop:
@@ -129,11 +148,87 @@ public class GhostEntity extends PathfinderMob {
         if (speakCooldown <= 0) {
             if (target instanceof ServerPlayer) {
                 GhostVoicePlayer.trySpeak(this);
-                speakCooldown = SPEAK_INTERVAL + random.nextInt(50);
+                speakCooldown = (int) (SPEAK_INTERVAL / (1 + stress / 200));
             }
         } else {
             speakCooldown--;
         }
+
+        int baseCooldown = (int) (200 - stress * 1.5);
+        baseCooldown = Math.max(40, baseCooldown);
+
+        if (teleportCooldown <= 0) {
+            if (random.nextInt(100) < stress) {
+                teleportBehindTarget(target);
+                teleportCooldown = baseCooldown;
+            }
+        } else {
+            teleportCooldown--;
+        }
+
+        if (mimicCooldown <= 0) {
+            if (random.nextInt(100) < stress / 2) {
+                mimicPlayerAction(target);
+                mimicCooldown = baseCooldown * 2;
+            }
+        } else {
+            mimicCooldown--;
+        }
+
+        if (traceCooldown <= 0) {
+            if (random.nextInt(100) < stress / 3) {
+                leaveTrace(target);
+                traceCooldown = baseCooldown * 3;
+            }
+        } else {
+            traceCooldown--;
+        }
+
+        if (vanishCooldown <= 0) {
+            if (random.nextInt(100) < stress / 4) {
+                vanishAndReappear(target);
+                vanishCooldown = baseCooldown * 4;
+            }
+        } else {
+            vanishCooldown--;
+        }
+    }
+
+    private void teleportBehindTarget(Player target) {
+        Vec3 lookVec = target.getLookAngle().normalize();
+        Vec3 behind = target.position().subtract(lookVec.scale(3 + random.nextInt(3)));
+        BlockPos pos = BlockPos.containing(behind.x, target.getY(), behind.z);
+        if (level().getBlockState(pos).isAir() && level().getBlockState(pos.above()).isAir()) {
+            this.teleportTo(behind.x, target.getY(), behind.z);
+            level().addParticle(ParticleTypes.SOUL_FIRE_FLAME, behind.x, behind.y + 1, behind.z, 0, 0.1, 0);
+        }
+    }
+
+    private void mimicPlayerAction(Player target) {
+        if (target.swinging) {
+            this.swing(target.getUsedItemHand());
+        }
+        this.setShiftKeyDown(target.isShiftKeyDown());
+        this.getLookControl().setLookAt(target.getLookAngle().x * 10, target.getEyeY(), target.getLookAngle().z * 10);
+    }
+
+    private void leaveTrace(Player target) {
+        BlockPos targetPos = target.blockPosition();
+        int radius = 5;
+        for (int i = 0; i < 5; i++) {
+            BlockPos tracePos = targetPos.offset(random.nextInt(radius * 2) - radius, random.nextInt(3) - 1, random.nextInt(radius * 2) - radius);
+            if (level().getBlockState(tracePos).isAir()) {
+                level().setBlock(tracePos, Blocks.RED_WOOL.defaultBlockState(), 3);
+                level().scheduleTick(tracePos, Blocks.RED_WOOL, 100 + random.nextInt(100));
+            }
+        }
+    }
+
+    private void vanishAndReappear(Player target) {
+        this.setInvisible(true);
+        this.teleportTo(target.getX() + random.nextInt(10) - 5, target.getY(), target.getZ() + random.nextInt(10) - 5);
+        level().addParticle(ParticleTypes.SMOKE, this.getX(), this.getY() + 1, this.getZ(), 0, 0.1, 0);
+        this.setInvisible(false);
     }
 
     private static class FollowPlayerGoal extends Goal {
@@ -205,6 +300,7 @@ public class GhostEntity extends PathfinderMob {
         if (skin != null) compound.putUUID("SkinOwner", skin);
         UUID target = getTargetPlayer();
         if (target != null) compound.putUUID("TargetPlayer", target);
+        compound.putInt("GhostMode", getGhostMode());
         long currentTick = level() instanceof ServerLevel ? ((ServerLevel)level()).getServer().getTickCount() : 0;
         compound.putInt("RemainingTicks", (int)(despawnTick - (level().getGameTime() - (currentTick - level().getGameTime()))));
     }
@@ -214,6 +310,7 @@ public class GhostEntity extends PathfinderMob {
         super.readAdditionalSaveData(compound);
         if (compound.hasUUID("SkinOwner")) setSkinOwner(compound.getUUID("SkinOwner"));
         if (compound.hasUUID("TargetPlayer")) setTargetPlayer(compound.getUUID("TargetPlayer"));
+        if (compound.contains("GhostMode")) setGhostMode(compound.getInt("GhostMode"));
         if (compound.contains("RemainingTicks")) {
             int remaining = compound.getInt("RemainingTicks");
             if (level() instanceof ServerLevel) {

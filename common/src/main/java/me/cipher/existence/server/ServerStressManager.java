@@ -31,7 +31,6 @@ public class ServerStressManager {
     private static final Map<UUID, BlockPos> LAST_GHOST_POS = new HashMap<>();
     private static final Map<UUID, Boolean> SAFE_ZONE_CACHE = new HashMap<>();
     private static final Map<UUID, Integer> SAFE_ZONE_COOLDOWN = new HashMap<>();
-    private static final Map<UUID, Long> LAST_HALLUCINATION_TICK = new HashMap<>();
     private static int syncCounter = 0;
     private static final double RATE = 0.01;
     private static final int SYNC_INTERVAL = 20;
@@ -106,17 +105,19 @@ public class ServerStressManager {
                 syncLoad(player);
             }
 
-            if (load > 80) {
-                long currentTick = server.getTickCount();
-                Long last = LAST_HALLUCINATION_TICK.get(uuid);
-                if (last == null || currentTick - last > 6000) {
-                    if (RANDOM.nextInt(2000) == 0) {
-                        triggerHallucination(player);
-                        LAST_HALLUCINATION_TICK.put(uuid, currentTick);
-                    }
-                }
+            double hallucinationChance = calculateHallucinationChance(load);
+            if (RANDOM.nextDouble() < hallucinationChance) {
+                triggerHallucination(player);
             }
         }
+    }
+
+    private static double calculateHallucinationChance(double load) {
+        if (load < 30) return 0.0;
+        if (load < 60) return 0.0005;
+        if (load < 80) return 0.002;
+        if (load < 95) return 0.01;
+        return 0.03;
     }
 
     private static void triggerHallucination(ServerPlayer player) {
