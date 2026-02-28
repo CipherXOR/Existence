@@ -224,6 +224,10 @@ public class Existence {
             skinSource = skinSources.get(server.overworld().getRandom().nextInt(skinSources.size()));
         }
 
+        return spawnGhostAtPlayer(target, skinSource, server);
+    }
+
+    private static boolean spawnGhostAtPlayer(ServerPlayer target, ServerPlayer skinSource, MinecraftServer server) {
         Level level = target.level();
         Vec3 lookVec = target.getLookAngle().normalize();
         Vec3 behind = target.position().subtract(lookVec.scale(5));
@@ -257,6 +261,7 @@ public class Existence {
             }
         }
         if (!safe) return false;
+
         GhostEntity ghost = ModEntities.GHOST.get().create(level);
         if (ghost != null) {
             ghost.setPos(x, y, z);
@@ -270,6 +275,23 @@ public class Existence {
             return true;
         }
         return false;
+    }
+
+    public static void spawnGhostForTarget(ServerPlayer target, MinecraftServer server) {
+        List<ServerPlayer> players = server.getPlayerList().getPlayers();
+        ServerPlayer skinSource;
+
+        if (players.size() == 1) {
+            skinSource = target;
+        } else {
+            List<ServerPlayer> others = players.stream()
+                    .filter(p -> p != target)
+                    .toList();
+            if (others.isEmpty()) return;
+            skinSource = others.get(server.overworld().getRandom().nextInt(others.size()));
+        }
+
+        spawnGhostAtPlayer(target, skinSource, server);
     }
 
     private static <T> T selectWeightedRandom(Map<T, Double> weights, RandomSource random) {
