@@ -36,6 +36,8 @@ dependencies {
 
     modImplementation "dev.architectury:architectury-forge:$rootProject.architectury_api_version"
 
+    modImplementation 'com.github.firis-games:MobBottle:ver1.20.1-0.3'
+
     implementation "de.maxhenkel.voicechat:voicechat-api:2.6.0"
 
     modImplementation "maven.modrinth:oculus:${project.oculus_version}"

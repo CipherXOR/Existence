@@ -33,6 +33,8 @@ dependencies {
 
     modImplementation "maven.modrinth:iris:${project.iris_version}"
 
+    modImplementation 'com.github.firis-games:MobBottle:ver1.20.1-0.3'
+
     implementation "de.maxhenkel.voicechat:voicechat-api:2.6.0"
 
     common(project(path: ':common', configuration: 'namedElements')) { transitive false }

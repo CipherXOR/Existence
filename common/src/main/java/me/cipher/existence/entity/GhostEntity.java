@@ -3,7 +3,6 @@ package me.cipher.existence.entity;
 import me.cipher.existence.server.ServerStressManager;
 import me.cipher.existence.sound.voicechat.GhostVoicePlayer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -37,9 +36,7 @@ public class GhostEntity extends PathfinderMob {
     private int interactionCooldown = 0;
     private int speakCooldown = 0;
     private static final int SPEAK_INTERVAL = 200;
-    private int teleportCooldown = 0;
     private int mimicCooldown = 0;
-    private int traceCooldown = 0;
     private int vanishCooldown = 0;
 
     public GhostEntity(EntityType<? extends PathfinderMob> type, Level level) {
@@ -65,7 +62,7 @@ public class GhostEntity extends PathfinderMob {
     public static AttributeSupplier.Builder createAttributes() {
         return PathfinderMob.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 1.0D)
-                .add(Attributes.MOVEMENT_SPEED, 0.1D);
+                .add(Attributes.MOVEMENT_SPEED, 0.2D);
     }
 
     public void setSkinOwner(UUID uuid) {
@@ -102,11 +99,6 @@ public class GhostEntity extends PathfinderMob {
     public void tick() {
         super.tick();
         if (level().isClientSide) {
-            if (random.nextInt(20) == 0) {
-                level().addParticle(ParticleTypes.SOUL_FIRE_FLAME,
-                        getX(), getY() + 1.8, getZ(),
-                        0, 0.1, 0);
-            }
             return;
         }
 
@@ -157,15 +149,6 @@ public class GhostEntity extends PathfinderMob {
         int baseCooldown = (int) (200 - stress * 1.5);
         baseCooldown = Math.max(40, baseCooldown);
 
-        if (teleportCooldown <= 0) {
-            if (random.nextInt(100) < stress) {
-                teleportBehindTarget(target);
-                teleportCooldown = baseCooldown;
-            }
-        } else {
-            teleportCooldown--;
-        }
-
         if (mimicCooldown <= 0) {
             if (random.nextInt(100) < stress / 2) {
                 mimicPlayerAction(target);
@@ -173,15 +156,6 @@ public class GhostEntity extends PathfinderMob {
             }
         } else {
             mimicCooldown--;
-        }
-
-        if (traceCooldown <= 0) {
-            if (random.nextInt(100) < stress / 3) {
-                leaveTrace(target);
-                traceCooldown = baseCooldown * 3;
-            }
-        } else {
-            traceCooldown--;
         }
 
         if (vanishCooldown <= 0) {
@@ -194,16 +168,6 @@ public class GhostEntity extends PathfinderMob {
         }
     }
 
-    private void teleportBehindTarget(Player target) {
-        Vec3 lookVec = target.getLookAngle().normalize();
-        Vec3 behind = target.position().subtract(lookVec.scale(3 + random.nextInt(3)));
-        BlockPos pos = BlockPos.containing(behind.x, target.getY(), behind.z);
-        if (level().getBlockState(pos).isAir() && level().getBlockState(pos.above()).isAir()) {
-            this.teleportTo(behind.x, target.getY(), behind.z);
-            level().addParticle(ParticleTypes.SOUL_FIRE_FLAME, behind.x, behind.y + 1, behind.z, 0, 0.1, 0);
-        }
-    }
-
     private void mimicPlayerAction(Player target) {
         if (target.swinging) {
             this.swing(target.getUsedItemHand());
@@ -212,22 +176,9 @@ public class GhostEntity extends PathfinderMob {
         this.getLookControl().setLookAt(target.getLookAngle().x * 10, target.getEyeY(), target.getLookAngle().z * 10);
     }
 
-    private void leaveTrace(Player target) {
-        BlockPos targetPos = target.blockPosition();
-        int radius = 5;
-        for (int i = 0; i < 5; i++) {
-            BlockPos tracePos = targetPos.offset(random.nextInt(radius * 2) - radius, random.nextInt(3) - 1, random.nextInt(radius * 2) - radius);
-            if (level().getBlockState(tracePos).isAir()) {
-                level().setBlock(tracePos, Blocks.RED_WOOL.defaultBlockState(), 3);
-                level().scheduleTick(tracePos, Blocks.RED_WOOL, 100 + random.nextInt(100));
-            }
-        }
-    }
-
     private void vanishAndReappear(Player target) {
         this.setInvisible(true);
         this.teleportTo(target.getX() + random.nextInt(10) - 5, target.getY(), target.getZ() + random.nextInt(10) - 5);
-        level().addParticle(ParticleTypes.SMOKE, this.getX(), this.getY() + 1, this.getZ(), 0, 0.1, 0);
         this.setInvisible(false);
     }
 

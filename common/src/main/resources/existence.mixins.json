@@ -12,7 +12,8 @@
     "EntityMixin",
     "ItemEntityMixin",
     "ServerPlayerMixin",
-    "LivingEntityUseItemFinishMixin"
+    "LivingEntityUseItemFinishMixin",
+    "MobBottleBlockItemMixin"
   ],
   "injectors": {
     "defaultRequire": 1
